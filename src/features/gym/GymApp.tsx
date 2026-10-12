@@ -376,6 +376,11 @@ function GymWorkspace({
   const completedToday = history.filter((workout) => new Date(workout.completedAt).toDateString() === new Date().toDateString()).length;
   const weekSessions = history.filter((workout) => Date.now() - new Date(workout.completedAt).getTime() < 7 * 86400000).length;
   const dayProgress = dayPlan.length ? Math.round((dayPlan.filter((exercise) => latestExerciseSets(history, exercise.exerciseId).length > 0).length / dayPlan.length) * 100) : 0;
+  const exerciseSuggestions = useMemo(() => {
+    const fromPlan = plan.map((item) => item.exerciseName);
+    const fromHistory = history.flatMap((session) => session.sets.map((set) => set.exerciseName));
+    return Array.from(new Set([...EXERCISE_PRESETS, ...fromPlan, ...fromHistory])).sort((a, b) => a.localeCompare(b));
+  }, [plan, history]);
 
   useEffect(() => {
     let disposed = false;
@@ -682,7 +687,7 @@ function GymWorkspace({
         <section role="dialog" aria-modal="true" aria-labelledby="exercise-picker-title" className="w-full max-w-lg border border-border bg-card p-5 shadow-2xl sm:p-6">
           <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">BUILD YOUR SESSION</p><h2 id="exercise-picker-title" className="mt-1 text-xl font-bold">Add an exercise</h2><p className="mt-1 text-xs text-muted-foreground">{WEEKDAYS[selectedDay]} · 3 sets · 10 rep target</p></div><button onClick={() => setShowExercisePicker(false)} aria-label="Close exercise picker" className="grid size-9 place-items-center text-muted-foreground hover:text-foreground"><X className="size-5" /></button></div>
           <label className="mt-5 block"><span className="sr-only">Search exercises</span><Input autoFocus value={exerciseSearch} onChange={(event) => setExerciseSearch(event.target.value)} placeholder="Search exercises" className="h-10 border-border bg-input/35" /></label>
-          <div className="mt-3 max-h-[min(36vh,290px)] overflow-y-auto divide-y divide-border border-y border-border">{EXERCISE_PRESETS.filter((name) => name.toLowerCase().includes(exerciseSearch.trim().toLowerCase())).map((name) => <button key={name} onClick={() => void addExercise(name)} disabled={busy} className="flex min-h-11 w-full items-center justify-between px-1 text-left text-sm hover:text-primary"><span>{name}</span><Plus className="size-4 shrink-0 text-muted-foreground" /></button>)}{EXERCISE_PRESETS.filter((name) => name.toLowerCase().includes(exerciseSearch.trim().toLowerCase())).length === 0 && <p className="py-4 text-sm text-muted-foreground">No match yet. Add it below.</p>}</div>
+          <div className="mt-3 max-h-[min(36vh,290px)] overflow-y-auto divide-y divide-border border-y border-border">{exerciseSuggestions.filter((name) => name.toLowerCase().includes(exerciseSearch.trim().toLowerCase())).map((name) => <button key={name} onClick={() => void addExercise(name)} disabled={busy} className="flex min-h-11 w-full items-center justify-between px-1 text-left text-sm hover:text-primary"><span>{name}</span><Plus className="size-4 shrink-0 text-muted-foreground" /></button>)}{exerciseSuggestions.filter((name) => name.toLowerCase().includes(exerciseSearch.trim().toLowerCase())).length === 0 && <p className="py-4 text-sm text-muted-foreground">No match yet. Add it below.</p>}</div>
           <form className="mt-4 flex gap-2" onSubmit={(event) => { event.preventDefault(); void addExercise(customExercise || exerciseSearch); }}><Input value={customExercise} onChange={(event) => setCustomExercise(event.target.value)} placeholder="Add a custom exercise" className="h-10 border-border bg-input/35" /><Button type="submit" disabled={busy || !(customExercise.trim() || exerciseSearch.trim())} size="sm" className="h-10"><Plus className="size-4" />Add</Button></form>
         </section>
       </div>}
