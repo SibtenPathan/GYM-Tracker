@@ -1,0 +1,254 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Cognito sign-in, owner-scoped DynamoDB, and private profile-photo storage for a gym member app.
+
+Parameters:
+  PreviewOrigin:
+    Type: String
+    Default: http://localhost:8080
+    Description: Exact HTTPS origin of the preview environment (no trailing slash).
+  ProductionOrigin:
+    Type: String
+    Default: http://localhost:8080
+    Description: Exact HTTPS origin of the published app. Use same as PreviewOrigin if not yet published.
+  LocalDevOrigin:
+    Type: String
+    Default: http://localhost:8080
+    Description: Local development origin used only in Cognito and S3 allowlists.
+  CognitoDomainPrefix:
+    Type: String
+    MinLength: 3
+    MaxLength: 63
+    AllowedPattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+    Description: Globally unique lowercase prefix for this region's Cognito hosted sign-in domain (e.g. ironpath-gym-yourname).
+
+Resources:
+  GymUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "gym-members-${AWS::StackName}"
+      AliasAttributes:
+        - email
+        - phone_number
+      AutoVerifiedAttributes:
+        - email
+      MfaConfiguration: "OFF"
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+        - Name: phone_number
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+      DeletionProtection: ACTIVE
+
+  GymUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn:
+      - GymUserPoolDomain
+    Properties:
+      ClientName: gym-member-web
+      UserPoolId: !Ref GymUserPool
+      GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      SupportedIdentityProviders:
+        - COGNITO
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - phone
+        - profile
+      CallbackURLs:
+        - !Sub "${PreviewOrigin}/"
+        - !Sub "${ProductionOrigin}/"
+        - !Sub "${LocalDevOrigin}/"
+      LogoutURLs:
+        - !Sub "${PreviewOrigin}/"
+        - !Sub "${ProductionOrigin}/"
+        - !Sub "${LocalDevOrigin}/"
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+
+  GymUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoDomainPrefix
+      UserPoolId: !Ref GymUserPool
+
+  GymIdentityPool:
+    Type: AWS::Cognito::IdentityPool
+    Properties:
+      IdentityPoolName: !Sub "gym_members_${AWS::StackName}"
+      AllowUnauthenticatedIdentities: false
+      CognitoIdentityProviders:
+        - ClientId: !Ref GymUserPoolClient
+          ProviderName: !Sub "cognito-idp.${AWS::Region}.amazonaws.com/${GymUserPool}"
+
+  GymAuthenticatedRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "gym-member-access-${AWS::StackName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                cognito-identity.amazonaws.com:aud: !Ref GymIdentityPool
+              ForAnyValue:StringLike:
+                cognito-identity.amazonaws.com:amr: authenticated
+      Policies:
+        - PolicyName: MemberOwnRecordsAndPhoto
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: OwnDynamoDbPartitionOnly
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:ConditionCheckItem
+                Resource:
+                  - !GetAtt GymMemberTable.Arn
+                  - !Sub "${GymMemberTable.Arn}/index/ExerciseHistoryIndex"
+                Condition:
+                  ForAllValues:StringEquals:
+                    dynamodb:LeadingKeys:
+                      - "${cognito-identity.amazonaws.com:sub}"
+              - Sid: OwnProfilePhotoOnly
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "${ProfilePhotosBucket.Arn}/${!cognito-identity.amazonaws.com:sub}/*"
+
+  GymIdentityPoolRoles:
+    Type: AWS::Cognito::IdentityPoolRoleAttachment
+    Properties:
+      IdentityPoolId: !Ref GymIdentityPool
+      Roles:
+        authenticated: !GetAtt GymAuthenticatedRole.Arn
+
+  GymMemberTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: GymMemberData
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: ExerciseHistoryIndex
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: true
+
+  ProfilePhotosBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - !Ref PreviewOrigin
+            AllowedMethods:
+              - GET
+              - PUT
+              - HEAD
+            AllowedHeaders:
+              - "*"
+            ExposedHeaders:
+              - ETag
+            MaxAge: 3600
+          - AllowedOrigins:
+              - !Ref LocalDevOrigin
+            AllowedMethods:
+              - GET
+              - PUT
+              - HEAD
+            AllowedHeaders:
+              - "*"
+            ExposedHeaders:
+              - ETag
+            MaxAge: 3600
+
+Outputs:
+  AwsRegion:
+    Description: AWS region selected when creating this stack.
+    Value: !Ref AWS::Region
+  CognitoUserPoolId:
+    Description: User Pool ID for email/phone sign-in.
+    Value: !Ref GymUserPool
+  CognitoUserPoolClientId:
+    Description: Public browser app client ID (not a secret).
+    Value: !Ref GymUserPoolClient
+  CognitoIdentityPoolId:
+    Description: Identity Pool ID for temporary, member-scoped AWS credentials.
+    Value: !Ref GymIdentityPool
+  CognitoHostedUiDomain:
+    Description: Hosted UI domain hostname (no https://).
+    Value: !Sub "${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com"
+  DynamoDbTableName:
+    Description: Single table for member profiles, plans, and set history.
+    Value: !Ref GymMemberTable
+  ProfilePhotosBucketName:
+    Description: Private S3 bucket name; objects are scoped to the member identity.
+    Value: !Ref ProfilePhotosBucket
