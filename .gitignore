@@ -21,3 +21,13 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+# === S1 Zeus (managed — do not edit between markers) ===
+# Ignore .zeus/ EXCEPT team-shared memory. See docs/v0.12-memory-system.md (Sharing/git).
+.zeus/*
+!.zeus/memory/
+.zeus/memory/*
+!.zeus/memory/core/
+.zeus/memory/core/*
+!.zeus/memory/core/project/
+!.zeus/memory/core/org/
+# === /S1 Zeus ===

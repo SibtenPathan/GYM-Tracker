@@ -4,16 +4,21 @@ import {
   ArrowDownRight,
   ArrowLeft,
   ArrowRight,
+  ArrowUpDown,
   ArrowUpRight,
   BarChart3,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronsDown,
+  ChevronsUp,
   CircleHelp,
   Dumbbell,
   Eye,
   EyeOff,
+  GripVertical,
   History,
   ImagePlus,
   LogOut,
@@ -49,9 +54,11 @@ import {
   resendMemberConfirmation,
   saveMemberProfile,
   savePlannedExercise,
+  savePlannedExercises,
   saveWorkoutSession,
   signInMember,
   signUpMember,
+  sortPlannedExercises,
   startGoogleSignIn,
   uploadProfilePhoto,
   type GymProfile,
@@ -366,13 +373,16 @@ function GymWorkspace({
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [showExercisePicker, setShowExercisePicker] = useState(false);
+  const [showReorderModal, setShowReorderModal] = useState(false);
+  const [draggedExerciseId, setDraggedExerciseId] = useState<string | null>(null);
+  const [dragOverExerciseId, setDragOverExerciseId] = useState<string | null>(null);
   const [customExercise, setCustomExercise] = useState("");
   const [exerciseSearch, setExerciseSearch] = useState("");
   const [draftSets, setDraftSets] = useState<Record<string, { reps: string; weight: string }[]>>({});
   const [startedAt] = useState(new Date().toISOString());
   const [historyFilter, setHistoryFilter] = useState("all");
 
-  const dayPlan = useMemo(() => plan.filter((exercise) => exercise.day === selectedDay).sort((a, b) => a.exerciseName.localeCompare(b.exerciseName)), [plan, selectedDay]);
+  const dayPlan = useMemo(() => sortPlannedExercises(plan.filter((exercise) => exercise.day === selectedDay)), [plan, selectedDay]);
   const completedToday = history.filter((workout) => new Date(workout.completedAt).toDateString() === new Date().toDateString()).length;
   const weekSessions = history.filter((workout) => Date.now() - new Date(workout.completedAt).getTime() < 7 * 86400000).length;
   const dayProgress = dayPlan.length ? Math.round((dayPlan.filter((exercise) => latestExerciseSets(history, exercise.exerciseId).length > 0).length / dayPlan.length) * 100) : 0;
@@ -426,13 +436,21 @@ function GymWorkspace({
   async function addExercise(name: string) {
     const cleaned = name.trim();
     if (!cleaned) return;
+    const currentDay = plan.filter((item) => item.day === selectedDay);
+    const maxOrder = currentDay.reduce(
+      (max, item, idx) => Math.max(max, typeof item.order === "number" ? item.order : idx + 1),
+      0,
+    );
+    const now = new Date().toISOString();
     const exercise: PlannedExercise = {
       day: selectedDay,
       exerciseId: createId(),
       exerciseName: cleaned,
       targetSets: 3,
       targetReps: 10,
-      updatedAt: new Date().toISOString(),
+      order: maxOrder + 1,
+      createdAt: now,
+      updatedAt: now,
     };
     clearFeedback();
     setBusy(true);
@@ -448,12 +466,84 @@ function GymWorkspace({
     finally { setBusy(false); }
   }
 
+  async function reorderExercises(newOrderedDayPlan: PlannedExercise[]) {
+    clearFeedback();
+    const now = new Date().toISOString();
+    const updatedDayExercises = newOrderedDayPlan.map((item, index) => ({
+      ...item,
+      order: index + 1,
+      updatedAt: now,
+    }));
+    const updatedDayMap = new Map(updatedDayExercises.map((e) => [e.exerciseId, e]));
+
+    setPlan((current) =>
+      current.map((item) => {
+        if (item.day === selectedDay && updatedDayMap.has(item.exerciseId)) {
+          return updatedDayMap.get(item.exerciseId)!;
+        }
+        return item;
+      }),
+    );
+
+    setBusy(true);
+    try {
+      await savePlannedExercises(session, updatedDayExercises);
+      setNotice("Exercise order updated.");
+    } catch (caught) {
+      setError(displayError(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function moveExercise(currentIndex: number, direction: -1 | 1) {
+    const targetIndex = currentIndex + direction;
+    if (targetIndex < 0 || targetIndex >= dayPlan.length) return;
+    const nextDayPlan = [...dayPlan];
+    const [moved] = nextDayPlan.splice(currentIndex, 1);
+    if (!moved) return;
+    nextDayPlan.splice(targetIndex, 0, moved);
+    await reorderExercises(nextDayPlan);
+  }
+
+  async function moveExerciseToIndex(fromIndex: number, toIndex: number) {
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= dayPlan.length ||
+      toIndex >= dayPlan.length
+    ) {
+      return;
+    }
+    const nextDayPlan = [...dayPlan];
+    const [moved] = nextDayPlan.splice(fromIndex, 1);
+    if (!moved) return;
+    nextDayPlan.splice(toIndex, 0, moved);
+    await reorderExercises(nextDayPlan);
+  }
+
   async function deleteExercise(exercise: PlannedExercise) {
     clearFeedback();
     setBusy(true);
     try {
       await removePlannedExercise(session, exercise);
-      setPlan((current) => current.filter((item) => item.exerciseId !== exercise.exerciseId));
+      const remainingDay = dayPlan.filter((item) => item.exerciseId !== exercise.exerciseId);
+      const now = new Date().toISOString();
+      const updatedRemaining = remainingDay.map((item, index) => ({
+        ...item,
+        order: index + 1,
+        updatedAt: now,
+      }));
+      const updatedMap = new Map(updatedRemaining.map((e) => [e.exerciseId, e]));
+      setPlan((current) =>
+        current
+          .filter((item) => item.exerciseId !== exercise.exerciseId)
+          .map((item) => (updatedMap.has(item.exerciseId) ? updatedMap.get(item.exerciseId)! : item)),
+      );
+      if (updatedRemaining.length > 0) {
+        await savePlannedExercises(session, updatedRemaining).catch(() => undefined);
+      }
       setNotice(`${exercise.exerciseName} removed from your plan.`);
     } catch (caught) { setError(displayError(caught)); }
     finally { setBusy(false); }
@@ -574,8 +664,21 @@ function GymWorkspace({
               </div>
 
               <div className="mt-7 flex flex-wrap items-end justify-between gap-3">
-                 <div><div className="text-xs font-semibold uppercase tracking-[0.13em] text-muted-foreground">{selectedWeekday.toUpperCase()} · {dayPlan.length} EXERCISES</div><h2 className="mt-1.5 text-xl font-bold">Workout plan</h2></div>
-                <Button variant="outline" size="sm" className="border-border" onClick={() => setShowExercisePicker(true)}><Plus className="size-4" />Add exercise</Button>
+                <div><div className="text-xs font-semibold uppercase tracking-[0.13em] text-muted-foreground">{selectedWeekday.toUpperCase()} · {dayPlan.length} EXERCISES</div><h2 className="mt-1.5 text-xl font-bold">Workout plan</h2></div>
+                <div className="flex items-center gap-2">
+                  {dayPlan.length > 1 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-border text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowReorderModal(true)}
+                    >
+                      <ArrowUpDown className="size-3.5" />
+                      Reorder
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" className="border-border" onClick={() => setShowExercisePicker(true)}><Plus className="size-4" />Add exercise</Button>
+                </div>
               </div>
 
               {dayPlan.length === 0 ? (
@@ -590,14 +693,87 @@ function GymWorkspace({
                   {dayPlan.map((exercise, index) => {
                     const previous = latestExerciseSets(history, exercise.exerciseId);
                     const previousVolume = previous.reduce((sum, set) => sum + set.reps * convertWeight(set.weight, set.weightUnit, profile.weightUnit), 0);
-                    return <article key={exercise.exerciseId} className="flex items-center gap-3 py-4 sm:gap-4">
-                      <div className="grid size-10 shrink-0 place-items-center border border-border text-xs font-bold text-muted-foreground">{String(index + 1).padStart(2, "0")}</div>
+                    const isDragging = draggedExerciseId === exercise.exerciseId;
+                    const isDragTarget = dragOverExerciseId === exercise.exerciseId && draggedExerciseId !== exercise.exerciseId;
+
+                    return <article
+                      key={exercise.exerciseId}
+                      draggable
+                      onDragStart={(event) => {
+                        setDraggedExerciseId(exercise.exerciseId);
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", exercise.exerciseId);
+                      }}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        if (dragOverExerciseId !== exercise.exerciseId) {
+                          setDragOverExerciseId(exercise.exerciseId);
+                        }
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverExerciseId === exercise.exerciseId) {
+                          setDragOverExerciseId(null);
+                        }
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const sourceId = draggedExerciseId || event.dataTransfer.getData("text/plain");
+                        setDraggedExerciseId(null);
+                        setDragOverExerciseId(null);
+                        if (sourceId && sourceId !== exercise.exerciseId) {
+                          const fromIndex = dayPlan.findIndex((item) => item.exerciseId === sourceId);
+                          const toIndex = index;
+                          if (fromIndex !== -1 && toIndex !== -1) {
+                            void moveExerciseToIndex(fromIndex, toIndex);
+                          }
+                        }
+                      }}
+                      onDragEnd={() => {
+                        setDraggedExerciseId(null);
+                        setDragOverExerciseId(null);
+                      }}
+                      className={`flex items-center gap-2.5 py-4 sm:gap-4 transition-all duration-150 ${
+                        isDragging ? "opacity-35 bg-accent/20" : ""
+                      } ${isDragTarget ? "border-t-2 border-primary bg-primary/5 pl-2" : ""}`}
+                    >
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <div
+                          title="Drag to reorder"
+                          className="hidden sm:grid size-6 place-items-center cursor-grab text-muted-foreground/50 hover:text-foreground active:cursor-grabbing"
+                        >
+                          <GripVertical className="size-4" />
+                        </div>
+                        <div className="grid size-10 shrink-0 place-items-center border border-border text-xs font-bold text-muted-foreground">{String(index + 1).padStart(2, "0")}</div>
+                      </div>
                       <div className="min-w-0 flex-1"><h3 className="truncate text-sm font-semibold sm:text-base">{exercise.exerciseName}</h3><p className="mt-1 text-xs text-muted-foreground">{exercise.targetSets} sets <span className="mx-1.5 text-border">·</span>{exercise.targetReps} reps target</p>
                         {previous.length > 0 && <div className="mt-2 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground"><History className="size-3.5 text-primary" />Last time: <span className="font-medium text-foreground">{previous.map((set) => `${set.reps} × ${convertWeight(set.weight, set.weightUnit, profile.weightUnit)} ${profile.weightUnit}`).join("  ·  ")}</span><span>({prettyDate(previous[0]?.recordedAt ?? "")})</span>{previousVolume > 0 && <span className="text-primary">· {Math.round(previousVolume)} {profile.weightUnit} volume</span>}</div>}
                       </div>
-                      <div className="flex items-center gap-1">
-                        <button title="Log this exercise" aria-label={`Log ${exercise.exerciseName}`} onClick={() => beginWorkout()} className="grid size-9 place-items-center border border-border text-primary hover:bg-primary/10"><ArrowRight className="size-4" /></button>
-                        <button title="Remove from plan" aria-label={`Remove ${exercise.exerciseName}`} onClick={() => void deleteExercise(exercise)} disabled={busy} className="grid size-9 place-items-center text-muted-foreground hover:text-destructive"><Trash2 className="size-4" /></button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex items-center border border-border bg-card/60">
+                          <button
+                            type="button"
+                            title="Move up"
+                            aria-label={`Move ${exercise.exerciseName} up`}
+                            disabled={index === 0 || busy}
+                            onClick={() => void moveExercise(index, -1)}
+                            className="grid size-8 sm:size-9 place-items-center text-muted-foreground hover:text-foreground hover:bg-accent/40 disabled:opacity-20 disabled:pointer-events-none transition-colors border-r border-border"
+                          >
+                            <ChevronUp className="size-4" />
+                          </button>
+                          <button
+                            type="button"
+                            title="Move down"
+                            aria-label={`Move ${exercise.exerciseName} down`}
+                            disabled={index === dayPlan.length - 1 || busy}
+                            onClick={() => void moveExercise(index, 1)}
+                            className="grid size-8 sm:size-9 place-items-center text-muted-foreground hover:text-foreground hover:bg-accent/40 disabled:opacity-20 disabled:pointer-events-none transition-colors"
+                          >
+                            <ChevronDown className="size-4" />
+                          </button>
+                        </div>
+                        <button title="Log this exercise" aria-label={`Log ${exercise.exerciseName}`} onClick={() => beginWorkout()} className="grid size-8 sm:size-9 place-items-center border border-border text-primary hover:bg-primary/10"><ArrowRight className="size-4" /></button>
+                        <button title="Remove from plan" aria-label={`Remove ${exercise.exerciseName}`} onClick={() => void deleteExercise(exercise)} disabled={busy} className="grid size-8 sm:size-9 place-items-center text-muted-foreground hover:text-destructive"><Trash2 className="size-4" /></button>
                       </div>
                     </article>;
                   })}
@@ -617,7 +793,37 @@ function GymWorkspace({
                   const previous = latestExerciseSets(history, exercise.exerciseId);
                   const currentSets = draftSets[exercise.exerciseId] ?? Array.from({ length: exercise.targetSets }, () => ({ reps: "", weight: "" }));
                   return <section key={exercise.exerciseId} className="py-5 sm:py-6">
-                    <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center border border-border text-xs font-bold text-muted-foreground">{String(index + 1).padStart(2, "0")}</span><div><h2 className="font-semibold">{exercise.exerciseName}</h2><p className="mt-1 text-xs text-muted-foreground">Target · {exercise.targetSets} × {exercise.targetReps}</p></div></div>{previous.length > 0 && <span className="max-w-[46%] text-right text-[11px] leading-5 text-muted-foreground">LAST TIME<br /><strong className="font-semibold text-foreground">{previous.map((set) => `${set.reps}×${convertWeight(set.weight, set.weightUnit, profile.weightUnit)}`).join(" · ")} {profile.weightUnit}</strong></span>}</div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <span className="grid size-9 shrink-0 place-items-center border border-border text-xs font-bold text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
+                        <div><h2 className="font-semibold">{exercise.exerciseName}</h2><p className="mt-1 text-xs text-muted-foreground">Target · {exercise.targetSets} × {exercise.targetReps}</p></div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {previous.length > 0 && <span className="hidden sm:block text-right text-[11px] leading-5 text-muted-foreground">LAST TIME<br /><strong className="font-semibold text-foreground">{previous.map((set) => `${set.reps}×${convertWeight(set.weight, set.weightUnit, profile.weightUnit)}`).join(" · ")} {profile.weightUnit}</strong></span>}
+                        <div className="flex items-center border border-border bg-card/60">
+                          <button
+                            type="button"
+                            title="Move exercise up"
+                            aria-label={`Move ${exercise.exerciseName} up in workout`}
+                            disabled={index === 0 || busy}
+                            onClick={() => void moveExercise(index, -1)}
+                            className="grid size-8 place-items-center text-muted-foreground hover:text-foreground hover:bg-accent/40 disabled:opacity-20 disabled:pointer-events-none transition-colors border-r border-border"
+                          >
+                            <ChevronUp className="size-4" />
+                          </button>
+                          <button
+                            type="button"
+                            title="Move exercise down"
+                            aria-label={`Move ${exercise.exerciseName} down in workout`}
+                            disabled={index === dayPlan.length - 1 || busy}
+                            onClick={() => void moveExercise(index, 1)}
+                            className="grid size-8 place-items-center text-muted-foreground hover:text-foreground hover:bg-accent/40 disabled:opacity-20 disabled:pointer-events-none transition-colors"
+                          >
+                            <ChevronDown className="size-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                     <div className="mt-4 grid grid-cols-[48px_1fr_1fr] items-center gap-2 px-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"><span>Set</span><span>Reps</span><span>Weight · {profile.weightUnit}</span></div>
                     <div className="mt-2 space-y-2">{currentSets.map((set, setIndex) => <div key={`${exercise.exerciseId}-${setIndex}`} className="grid grid-cols-[48px_1fr_1fr] items-center gap-2">
                       <span className="grid h-10 place-items-center border border-border text-xs font-semibold text-muted-foreground">{String(setIndex + 1).padStart(2, "0")}</span>
@@ -682,6 +888,132 @@ function GymWorkspace({
         <MobileNavButton icon={<History />} label="History" active={view === "history"} onClick={() => setView("history")} />
         <MobileNavButton icon={<UserRound />} label="Profile" active={view === "profile"} onClick={() => setView("profile")} />
       </nav>
+
+      {showReorderModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-background/80 p-0 backdrop-blur-[2px] sm:items-center sm:p-5"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowReorderModal(false);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reorder-modal-title"
+            className="w-full max-w-lg border border-border bg-card p-5 shadow-2xl sm:p-6"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">CUSTOMIZE ORDER</p>
+                <h2 id="reorder-modal-title" className="mt-1 text-xl font-bold">Set exercise order</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {WEEKDAYS[selectedDay]} · {dayPlan.length} exercises
+                </p>
+              </div>
+              <button
+                onClick={() => setShowReorderModal(false)}
+                aria-label="Close reorder modal"
+                className="grid size-9 place-items-center text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+              Position exercises in your preferred sequence. Choose a slot number or click the arrows to move exercises up and down.
+            </p>
+
+            <div className="mt-4 max-h-[min(50vh,380px)] overflow-y-auto divide-y divide-border border-y border-border">
+              {dayPlan.map((exercise, index) => (
+                <div key={exercise.exerciseId} className="flex items-center justify-between gap-2.5 py-3 px-1">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="grid size-8 shrink-0 place-items-center border border-border text-xs font-bold text-muted-foreground">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">{exercise.exerciseName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {exercise.targetSets} sets · {exercise.targetReps} reps
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <label className="sr-only" htmlFor={`pos-select-${exercise.exerciseId}`}>
+                      Position for {exercise.exerciseName}
+                    </label>
+                    <select
+                      id={`pos-select-${exercise.exerciseId}`}
+                      value={index + 1}
+                      onChange={(e) => {
+                        const targetPos = Number(e.target.value) - 1;
+                        void moveExerciseToIndex(index, targetPos);
+                      }}
+                      disabled={busy}
+                      aria-label={`Position of ${exercise.exerciseName}`}
+                      className="h-8 rounded border border-border bg-background px-1.5 text-xs font-semibold text-foreground"
+                    >
+                      {dayPlan.map((_, i) => (
+                        <option key={i + 1} value={i + 1}>
+                          #{i + 1}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      title="Move to top"
+                      aria-label={`Move ${exercise.exerciseName} to top`}
+                      disabled={index === 0 || busy}
+                      onClick={() => void moveExerciseToIndex(index, 0)}
+                      className="grid size-8 place-items-center border border-border text-muted-foreground hover:text-foreground hover:bg-accent/40 disabled:opacity-20 transition-colors"
+                    >
+                      <ChevronsUp className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Move up"
+                      aria-label={`Move ${exercise.exerciseName} up`}
+                      disabled={index === 0 || busy}
+                      onClick={() => void moveExercise(index, -1)}
+                      className="grid size-8 place-items-center border border-border text-muted-foreground hover:text-foreground hover:bg-accent/40 disabled:opacity-20 transition-colors"
+                    >
+                      <ChevronUp className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Move down"
+                      aria-label={`Move ${exercise.exerciseName} down`}
+                      disabled={index === dayPlan.length - 1 || busy}
+                      onClick={() => void moveExercise(index, 1)}
+                      className="grid size-8 place-items-center border border-border text-muted-foreground hover:text-foreground hover:bg-accent/40 disabled:opacity-20 transition-colors"
+                    >
+                      <ChevronDown className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Move to bottom"
+                      aria-label={`Move ${exercise.exerciseName} to bottom`}
+                      disabled={index === dayPlan.length - 1 || busy}
+                      onClick={() => void moveExerciseToIndex(index, dayPlan.length - 1)}
+                      className="grid size-8 place-items-center border border-border text-muted-foreground hover:text-foreground hover:bg-accent/40 disabled:opacity-20 transition-colors"
+                    >
+                      <ChevronsDown className="size-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <Button onClick={() => setShowReorderModal(false)} className="w-full sm:w-auto">
+                Done
+              </Button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {showExercisePicker && <div className="fixed inset-0 z-50 flex items-end justify-center bg-background/75 p-0 backdrop-blur-[2px] sm:items-center sm:p-5" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowExercisePicker(false); }}>
         <section role="dialog" aria-modal="true" aria-labelledby="exercise-picker-title" className="w-full max-w-lg border border-border bg-card p-5 shadow-2xl sm:p-6">

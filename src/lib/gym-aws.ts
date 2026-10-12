@@ -43,6 +43,8 @@ export interface PlannedExercise {
   exerciseName: string;
   targetSets: number;
   targetReps: number;
+  order?: number;
+  createdAt?: string;
   updatedAt: string;
 }
 
@@ -541,6 +543,26 @@ export async function saveMemberProfile(session: MemberSession, profile: GymProf
   }));
 }
 
+export function sortPlannedExercises(exercises: PlannedExercise[]): PlannedExercise[] {
+  return [...exercises].sort((a, b) => {
+    const orderA = typeof a.order === "number" ? a.order : undefined;
+    const orderB = typeof b.order === "number" ? b.order : undefined;
+    if (orderA !== undefined && orderB !== undefined) {
+      if (orderA !== orderB) return orderA - orderB;
+    } else if (orderA !== undefined) {
+      return -1;
+    } else if (orderB !== undefined) {
+      return 1;
+    }
+    const timeA = a.createdAt || a.updatedAt || "";
+    const timeB = b.createdAt || b.updatedAt || "";
+    if (timeA && timeB && timeA !== timeB) {
+      return timeA.localeCompare(timeB);
+    }
+    return 0;
+  });
+}
+
 export async function savePlannedExercise(
   session: MemberSession,
   exercise: PlannedExercise,
@@ -555,6 +577,28 @@ export async function savePlannedExercise(
       record: exercise,
     },
   }));
+}
+
+export async function savePlannedExercises(
+  session: MemberSession,
+  exercises: PlannedExercise[],
+): Promise<void> {
+  if (exercises.length === 0) return;
+  const context = await getMemberContext(session);
+  requireStableIdentity(session, context);
+  const tableName = getTableName();
+  await Promise.all(
+    exercises.map((exercise) =>
+      context.doc.send(new PutCommand({
+        TableName: tableName,
+        Item: {
+          PK: context.identityId,
+          SK: `PLAN#${exercise.day}#${exercise.exerciseId}`,
+          record: exercise,
+        },
+      }))
+    )
+  );
 }
 
 export async function removePlannedExercise(
