@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#111622" />
+      <stop offset="40%" stop-color="#0C1019" />
+      <stop offset="100%" stop-color="#06080D" />
+    </linearGradient>
+
+    <!-- Border Gradient -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B4861" />
+      <stop offset="50%" stop-color="#1E2738" />
+      <stop offset="100%" stop-color="#0F1522" />
+    </linearGradient>
+
+    <!-- Radial Core Glow -->
+    <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FF5E00" stop-opacity="0.32" />
+      <stop offset="50%" stop-color="#FF3B00" stop-opacity="0.10" />
+      <stop offset="100%" stop-color="#FF3B00" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Outer Plate Metallic Gradient -->
+    <linearGradient id="outerPlateGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="18%" stop-color="#F1F5F9" />
+      <stop offset="50%" stop-color="#CBD5E1" />
+      <stop offset="82%" stop-color="#94A3B8" />
+      <stop offset="100%" stop-color="#64748B" />
+    </linearGradient>
+
+    <!-- Inner Plate Gradient -->
+    <linearGradient id="innerPlateGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#F8FAFC" />
+      <stop offset="25%" stop-color="#E2E8F0" />
+      <stop offset="65%" stop-color="#94A3B8" />
+      <stop offset="100%" stop-color="#475569" />
+    </linearGradient>
+
+    <!-- Bar Steel Gradient -->
+    <linearGradient id="barSteel" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="30%" stop-color="#E2E8F0" />
+      <stop offset="70%" stop-color="#94A3B8" />
+      <stop offset="100%" stop-color="#475569" />
+    </linearGradient>
+
+    <!-- Collar Accent Gradient (Energetic Athletic Flame) -->
+    <linearGradient id="accentCollar" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFB03A" />
+      <stop offset="35%" stop-color="#FF5E00" />
+      <stop offset="100%" stop-color="#D93800" />
+    </linearGradient>
+
+    <!-- Plate Rim Highlight -->
+    <linearGradient id="plateRim" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.65" />
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.35" />
+    </linearGradient>
+
+    <!-- Drop Shadow Filter -->
+    <filter id="deepShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.65" />
+    </filter>
+
+    <!-- Accent Collar Glow -->
+    <filter id="accentGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="0" stdDeviation="9" flood-color="#FF5E00" flood-opacity="0.75" />
+    </filter>
+  </defs>
+
+  <!-- App Icon Squircle Container -->
+  <rect x="12" y="12" width="488" height="488" rx="118" fill="url(#bgGrad)" stroke="url(#borderGrad)" stroke-width="6" />
+
+  <!-- Core Dynamic Ambient Glow -->
+  <circle cx="256" cy="256" r="210" fill="url(#coreGlow)" />
+
+  <!-- Upward angled dumbbell: -45 degrees (Growth / PR / Lifting upward) -->
+  <g transform="rotate(-45 256 256)">
+    <!-- Bar Shaft (Runs cleanly between plates) -->
+    <rect x="110" y="238" width="292" height="36" rx="10" fill="url(#barSteel)" filter="url(#deepShadow)" />
+
+    <!-- Center Handle Grip Texture / Knurling -->
+    <rect x="214" y="238" width="84" height="36" rx="6" fill="#1E293B" opacity="0.45" />
+    <line x1="226" y1="238" x2="226" y2="274" stroke="#CBD5E1" stroke-width="3" opacity="0.65" />
+    <line x1="236" y1="238" x2="236" y2="274" stroke="#CBD5E1" stroke-width="3" opacity="0.65" />
+    <line x1="246" y1="238" x2="246" y2="274" stroke="#CBD5E1" stroke-width="3" opacity="0.65" />
+    <line x1="256" y1="238" x2="256" y2="274" stroke="#CBD5E1" stroke-width="3" opacity="0.65" />
+    <line x1="266" y1="238" x2="266" y2="274" stroke="#CBD5E1" stroke-width="3" opacity="0.65" />
+    <line x1="276" y1="238" x2="276" y2="274" stroke="#CBD5E1" stroke-width="3" opacity="0.65" />
+    <line x1="286" y1="238" x2="286" y2="274" stroke="#CBD5E1" stroke-width="3" opacity="0.65" />
+
+    <!-- Left Outer Large Bumper Plate -->
+    <g filter="url(#deepShadow)">
+      <rect x="100" y="136" width="50" height="240" rx="20" fill="url(#outerPlateGrad)" />
+      <rect x="100" y="136" width="50" height="240" rx="20" fill="url(#plateRim)" />
+      <line x1="125" y1="154" x2="125" y2="358" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity="0.55" />
+      <line x1="112" y1="148" x2="112" y2="364" stroke="#334155" stroke-width="2.5" stroke-linecap="round" opacity="0.35" />
+    </g>
+
+    <!-- Right Outer Large Bumper Plate -->
+    <g filter="url(#deepShadow)">
+      <rect x="362" y="136" width="50" height="240" rx="20" fill="url(#outerPlateGrad)" />
+      <rect x="362" y="136" width="50" height="240" rx="20" fill="url(#plateRim)" />
+      <line x1="387" y1="154" x2="387" y2="358" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity="0.55" />
+      <line x1="374" y1="148" x2="374" y2="364" stroke="#334155" stroke-width="2.5" stroke-linecap="round" opacity="0.35" />
+    </g>
+
+    <!-- Left Inner Medium Plate -->
+    <g filter="url(#deepShadow)">
+      <rect x="156" y="164" width="42" height="184" rx="16" fill="url(#innerPlateGrad)" />
+      <rect x="156" y="164" width="42" height="184" rx="16" fill="url(#plateRim)" />
+      <line x1="177" y1="178" x2="177" y2="334" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" opacity="0.5" />
+    </g>
+
+    <!-- Right Inner Medium Plate -->
+    <g filter="url(#deepShadow)">
+      <rect x="314" y="164" width="42" height="184" rx="16" fill="url(#innerPlateGrad)" />
+      <rect x="314" y="164" width="42" height="184" rx="16" fill="url(#plateRim)" />
+      <line x1="335" y1="178" x2="335" y2="334" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" opacity="0.5" />
+    </g>
+
+    <!-- Heavy-Duty Collar Clamps (Vibrant Athletic Flame Accent) -->
+    <rect x="198" y="222" width="15" height="68" rx="7" fill="url(#accentCollar)" filter="url(#accentGlow)" />
+    <rect x="299" y="222" width="15" height="68" rx="7" fill="url(#accentCollar)" filter="url(#accentGlow)" />
+  </g>
+</svg>
